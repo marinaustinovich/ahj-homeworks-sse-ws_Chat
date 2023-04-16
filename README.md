@@ -1,3 +1,4 @@
+[![Build status](https://ci.appveyor.com/api/projects/status/jitkajv97gx2s3ce/branch/main?svg=true)](https://ci.appveyor.com/project/marinaustinovich/ahj-homeworks-sse-ws-chat/branch/main)
 
 ## Чат
 
