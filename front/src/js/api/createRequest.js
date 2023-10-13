@@ -6,7 +6,7 @@ const createRequest = async (options) => {
     headers = { 'Content-Type': 'application/json' },
   } = options;
 
-  const url = `${process.env.REACT_APP_API_URL}${path}`;
+  const url = `https://ws-chat-r75q.onrender.com${path}`;
 
   const response = await fetch(url, {
     method,

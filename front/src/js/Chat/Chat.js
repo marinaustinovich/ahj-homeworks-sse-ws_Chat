@@ -51,7 +51,7 @@ export default class Chat {
   }
 
   onEnterChatHandler() {
-    this.websocket = new WebSocket('ws://localhost:3000');
+    this.websocket = new WebSocket('ws://ws-chat-r75q.onrender.com');
     this.subscribeOnEvents();
   }
 
