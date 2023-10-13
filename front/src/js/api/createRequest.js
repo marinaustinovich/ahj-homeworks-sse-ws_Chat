@@ -6,7 +6,7 @@ const createRequest = async (options) => {
     headers = { 'Content-Type': 'application/json' },
   } = options;
 
-  const url = `http://localhost:3000${path}`;
+  const url = `${process.env.REACT_APP_API_URL}${path}`;
 
   const response = await fetch(url, {
     method,
