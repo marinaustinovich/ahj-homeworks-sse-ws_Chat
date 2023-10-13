@@ -1,9 +1,6 @@
-import Modal from './Chat/Modal';
+import Modal from './Modal/Modal';
 
-/* eslint-disable */
-console.log('it works!');
+const chatContainer = document.querySelector('.chat-container');
+const modal = new Modal(chatContainer);
 
-const modal = new Modal(document.querySelector('.chat-container'));
-
-
-
+modal.init();

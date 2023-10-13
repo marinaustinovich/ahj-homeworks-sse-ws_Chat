@@ -1,33 +1,31 @@
 import dayjs from 'dayjs';
-import handleSendMessage from './handleSendMessage';
-import mergeMessages from './mergeMessages';
-import sortMessagesByDate from './sortMessagesByDate';
-import scrollToBottom from './scrollToBottom';
+import ChatAPI from '../api/ChatAPI';
+
+import './chat.css';
 
 export default class Chat {
-  constructor(container, socket, data) {
+  constructor(container) {
     if (!(container instanceof HTMLElement)) {
       throw new Error('container is not HTMLElement');
     }
 
     this.container = container;
-    this.socket = socket;
-    this.nickname = data.nickname;
-    this.users = data.users;
+    this.api = new ChatAPI('users');
+    this.websocket = null;
+    this.user = null;
+  }
+
+  async init(user) {
+    this.user = user;
     this.bindToDOM();
+    this.registerEvents();
+    this.onEnterChatHandler();
   }
 
   bindToDOM() {
-    this.drawUi();
-    this.events();
-  }
-
-  drawUi() {
     this.container.innerHTML = `
       <div class="user-list">
-        <ul>
-          <li class="you">you</li>
-        </ul>
+        <ul></ul>
       </div>
       <div class="chat-window">
         <div class="messages"></div>
@@ -38,74 +36,127 @@ export default class Chat {
     `;
 
     this.messages = this.container.querySelector('.messages');
-
-    if (this.users.length > 1) {
-      this.addUsersList();
-      const mergedMessages = mergeMessages(this.users);
-      const sortMessages = sortMessagesByDate(mergedMessages);
-      sortMessages.forEach((message) => this.addMessage(message));
-    }
   }
 
-  events() {
-    this.container.querySelector('.message-form').addEventListener('submit', (e) => this.onSubmit(e));
+  registerEvents() {
+    window.addEventListener('beforeunload', () => this.exitChat());
+    this.container
+      .querySelector('.message-form')
+      .addEventListener('submit', (e) => this.onSubmit(e));
   }
 
   onSubmit(e) {
     e.preventDefault();
+    this.sendMessage();
+  }
 
-    const messageInput = e.target.querySelector('.message-input');
-    const text = messageInput.value.trim(); // удалить пробелы по краям сообщения
+  onEnterChatHandler() {
+    this.websocket = new WebSocket('ws://localhost:3000');
+    this.subscribeOnEvents();
+  }
 
-    if (!text) {
-      return; // не отправляем сообщение, если текст отсутствует
-    }
+  subscribeOnEvents() {
+    this.websocket.addEventListener('open', () => Chat.handleOpen());
+    this.websocket.addEventListener('message', (e) => this.handleMessage(e));
+    this.websocket.addEventListener('close', () => Chat.handleClose());
+    this.websocket.addEventListener('error', () => Chat.handleError());
+  }
 
-    const message = {
-      text,
-      time: new Date(),
-      nickname: this.nickname,
+  sendMessage() {
+    const message = this.getMessageInputValue();
+    if (!message) return;
+
+    const payload = {
+      type: 'send',
+      message: { text: message, time: new Date() },
+      user: this.user,
     };
-
-    handleSendMessage(this.socket, message);
-    this.addMessage(message); // код для добавления сообщения на страницу
-
-    // Очищаем поле ввода сообщения
-    messageInput.value = '';
+    this.websocket.send(JSON.stringify(payload));
+    this.clearMessageInput();
   }
 
-  addMessage(obj) {
-    const message = document.createElement('div');
-    message.classList.add('message');
-    const time = dayjs(obj.time).format('HH:mm DD.MM.YY');
-    let name = obj.nickname;
-    let classEl = '';
+  getMessageInputValue() {
+    const input = this.container.querySelector('.message-input');
+    return input?.value.trim();
+  }
 
-    if (obj.nickname === this.nickname) {
-      name = 'You';
-      classEl = 'username';
-      message.classList.add('message-user');
-    }
+  clearMessageInput() {
+    const input = this.container.querySelector('.message-input');
+    if (input) input.value = '';
+  }
 
-    message.innerHTML = `
-    <div class="message-info ${classEl}">
-      <span>${name}</span>
-      <span class="timestamp">${time}</span>
-    </div>
-    <div class="text">${obj.text}</div>
+  renderMessage({ user, message }) {
+    const { name } = user;
+    const { text, time } = message;
+    const isCurrentUser = name === this.user.name;
+
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', isCurrentUser && 'message-user');
+
+    const formattedTime = dayjs(time).format('HH:mm DD.MM.YY');
+    const displayName = isCurrentUser ? 'You' : name;
+
+    messageElement.innerHTML = `
+      <div class="message-info">
+        <span>${displayName}</span>
+        <span class="timestamp">${formattedTime}</span>
+      </div>
+      <div class="text">${text}</div>
     `;
-    this.messages.append(message);
-    scrollToBottom(this.container.querySelector('.messages'));
+
+    this.messages.append(messageElement);
+    this.scrollToBottom();
   }
 
-  addUsersList() {
-    const usersList = this.container.querySelector('ul');
-    this.users.forEach((user) => {
-      const nicknameLi = document.createElement('li');
-      if (user.nickname !== this.nickname) {
-        nicknameLi.textContent = user.nickname;
-        usersList.append(nicknameLi);
-      }
-    });
+  static handleOpen() {
+    console.log('Connected to WebSocket server');
+  }
+
+  handleMessage(event) {
+    const receivedMessage = JSON.parse(event.data);
+
+    if (!receivedMessage.type) {
+      this.updateUserList(receivedMessage);
+    }
+    if (receivedMessage.type === 'send') {
+      this.renderMessage(receivedMessage);
+    }
+  }
+
+  static handleClose() {
+    console.log('Disconnected from WebSocket server');
+  }
+
+  static handleError(event) {
+    console.error(`Error: ${event}`);
+  }
+
+  exitChat() {
+    const payload = {
+      type: 'exit',
+      user: this.user,
+    };
+    this.websocket.send(JSON.stringify(payload));
+  }
+
+  updateUserList(users) {
+    const usersContainer = this.container.querySelector('.user-list ul');
+
+    usersContainer.innerHTML = users
+      .map((user) => {
+        const isYou = user.name === this.user.name;
+
+        return `
+        <li class=${isYou ? 'you' : ''}>
+            <span class="label"></span>
+            <span class="user-nickname">${isYou ? 'You' : user.name}</span>
+        </li>
+    `;
+      })
+      .join('');
+  }
+
+  scrollToBottom() {
+    this.messages.scrollTop = this.messages.scrollHeight;
   }
 }
